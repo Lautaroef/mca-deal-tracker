@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { router, workspaceProcedure } from "../init";
 import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
 import {
   listDeals,
   getDeal,
@@ -11,6 +13,7 @@ import {
   softDeleteDeal,
 } from "@/server/services/deals";
 import { getDealEvents } from "@/server/services/activity-log";
+import { DEAL_STATUS_VALUES } from "@/server/lib/status-machine";
 
 export const dealsRouter = router({
   list: workspaceProcedure.query(async ({ ctx }) => {
@@ -18,7 +21,7 @@ export const dealsRouter = router({
   }),
 
   getById: workspaceProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().uuid("Invalid deal ID") }))
     .query(async ({ ctx, input }) => {
       return getDeal(ctx.scope, input.id);
     }),
@@ -26,12 +29,12 @@ export const dealsRouter = router({
   create: workspaceProcedure
     .input(
       z.object({
-        merchantName: z.string().min(1, "Merchant name is required"),
-        merchantEmail: z.string().email().optional(),
-        merchantPhone: z.string().optional(),
+        merchantName: z.string().min(1, "Merchant name is required").max(255),
+        merchantEmail: z.string().email().max(255).optional(),
+        merchantPhone: z.string().max(50).optional(),
         requestedAmount: z.number().positive("Requested amount must be positive"),
-        notes: z.string().optional(),
-        assignedUserId: z.string().optional(),
+        notes: z.string().max(10000).optional(),
+        assignedUserId: z.string().uuid("Invalid user ID").optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -46,12 +49,12 @@ export const dealsRouter = router({
   update: workspaceProcedure
     .input(
       z.object({
-        id: z.string(),
-        merchantName: z.string().min(1).optional(),
-        merchantEmail: z.string().email().optional(),
-        merchantPhone: z.string().optional(),
+        id: z.string().uuid("Invalid deal ID"),
+        merchantName: z.string().min(1).max(255).optional(),
+        merchantEmail: z.string().email().max(255).optional(),
+        merchantPhone: z.string().max(50).optional(),
         requestedAmount: z.number().positive().optional(),
-        notes: z.string().optional(),
+        notes: z.string().max(10000).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -68,24 +71,19 @@ export const dealsRouter = router({
   updateStatus: workspaceProcedure
     .input(
       z.object({
-        id: z.string(),
-        status: z.string(),
+        id: z.string().uuid("Invalid deal ID"),
+        status: z.enum(DEAL_STATUS_VALUES),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return updateDealStatus(
-        db,
-        ctx.scope,
-        input.id,
-        input.status as Parameters<typeof updateDealStatus>[3],
-      );
+      return updateDealStatus(db, ctx.scope, input.id, input.status);
     }),
 
   assign: workspaceProcedure
     .input(
       z.object({
-        id: z.string(),
-        userId: z.string(),
+        id: z.string().uuid("Invalid deal ID"),
+        userId: z.string().uuid("Invalid user ID"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -93,14 +91,28 @@ export const dealsRouter = router({
     }),
 
   delete: workspaceProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().uuid("Invalid deal ID") }))
     .mutation(async ({ ctx, input }) => {
       return softDeleteDeal(db, ctx.scope, input.id);
     }),
 
+  listUsers: workspaceProcedure.query(async ({ ctx }) => {
+    return db
+      .select({
+        id: users.id,
+        name: users.name,
+        role: users.role,
+      })
+      .from(users)
+      .where(eq(users.workspaceId, ctx.user.workspaceId))
+      .orderBy(users.name);
+  }),
+
   getActivity: workspaceProcedure
-    .input(z.object({ dealId: z.string() }))
+    .input(z.object({ dealId: z.string().uuid("Invalid deal ID") }))
     .query(async ({ ctx, input }) => {
+      // Verify the deal is visible to this user before returning activity
+      await ctx.scope.findDeal(input.dealId);
       return getDealEvents(db, input.dealId, ctx.scope.ctx.workspaceId);
     }),
 });

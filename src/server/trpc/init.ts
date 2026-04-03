@@ -3,13 +3,14 @@ import superjson from "superjson";
 import { db } from "@/server/db";
 import { users, teamMemberships } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { createWorkspaceScope } from "@/server/lib/workspace-scope";
+import { createWorkspaceScope, type UserRole } from "@/server/lib/workspace-scope";
+import { SESSION_COOKIE_NAME, UUID_REGEX } from "@/server/lib/constants";
 
 export type SessionUser = {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "team_leader" | "rep";
+  role: UserRole;
   workspaceId: string;
   teamId: string | null;
 };
@@ -27,8 +28,8 @@ export async function createTRPCContext(req: Request): Promise<Context> {
     }),
   );
 
-  const userId = cookies["mca-session"];
-  if (!userId) {
+  const userId = cookies[SESSION_COOKIE_NAME];
+  if (!userId || !UUID_REGEX.test(userId)) {
     return { user: null };
   }
 

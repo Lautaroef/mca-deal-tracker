@@ -3,17 +3,16 @@ import { NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { users, teamMemberships } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-
-const COOKIE_NAME = "mca-session";
+import { SESSION_COOKIE_NAME, UUID_REGEX } from "@/server/lib/constants";
 
 /** POST /api/auth — Set the current user (dev auth) */
 export async function POST(req: Request) {
   const body = await req.json();
   const userId = body?.userId;
 
-  if (!userId || typeof userId !== "string") {
+  if (!userId || typeof userId !== "string" || !UUID_REGEX.test(userId)) {
     return NextResponse.json(
-      { error: "userId is required and must be a string" },
+      { error: "userId is required and must be a valid UUID" },
       { status: 400 },
     );
   }
@@ -27,15 +26,16 @@ export async function POST(req: Request) {
 
   if (!user) {
     return NextResponse.json(
-      { error: `User with id '${userId}' not found` },
+      { error: "User not found" },
       { status: 404 },
     );
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, userId, {
+  cookieStore.set(SESSION_COOKIE_NAME, userId, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     // No maxAge — session cookie, cleared on browser close
   });
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
 /** GET /api/auth — Get the current user from cookie */
 export async function GET() {
   const cookieStore = await cookies();
-  const userId = cookieStore.get(COOKIE_NAME)?.value;
+  const userId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
   if (!userId) {
     return NextResponse.json({ user: null });
@@ -85,7 +85,7 @@ export async function GET() {
 /** DELETE /api/auth — Clear the session cookie */
 export async function DELETE() {
   const cookieStore = await cookies();
-  cookieStore.delete(COOKIE_NAME);
+  cookieStore.delete(SESSION_COOKIE_NAME);
 
   return NextResponse.json({ success: true });
 }

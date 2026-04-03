@@ -10,13 +10,7 @@ export default defineConfig({
     // Run test files sequentially — they share a real database
     fileParallelism: false,
     sequence: {
-      // Run pure unit tests first, then integration tests
-      files: [
-        "**/status-machine*",
-        "**/workspace-isolation*",
-        "**/visibility-cascade*",
-        "**/deal-service*",
-      ],
+      concurrent: false,
     },
   },
   resolve: {

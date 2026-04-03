@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LoaderCircleIcon } from "lucide-react";
 
 interface DealFormData {
   merchantName: string;
@@ -119,13 +120,16 @@ export function DealForm({
       </div>
 
       <Button type="submit" disabled={isSubmitting} className="self-end">
-        {isSubmitting
-          ? mode === "create"
-            ? "Creating..."
-            : "Saving..."
-          : mode === "create"
-            ? "Create Deal"
-            : "Save Changes"}
+        {isSubmitting ? (
+          <>
+            <LoaderCircleIcon className="size-4 animate-spin" />
+            {mode === "create" ? "Creating..." : "Saving..."}
+          </>
+        ) : mode === "create" ? (
+          "Create Deal"
+        ) : (
+          "Save Changes"
+        )}
       </Button>
     </form>
   );

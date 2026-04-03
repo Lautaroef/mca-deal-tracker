@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { deals, users } from "@/server/db/schema";
 import type { Database } from "@/server/db";
 import type { WorkspaceContext, WorkspaceScope } from "@/server/lib/workspace-scope";
 import {
   validateTransition,
   getStatusLabel,
+  DEAL_STATUS_VALUES,
   type DealStatus,
 } from "@/server/lib/status-machine";
 import { logEvent } from "@/server/services/activity-log";
@@ -18,20 +19,7 @@ export const createDealSchema = z.object({
   merchantPhone: z.string().optional(),
   requestedAmount: z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid amount"),
   assignedUserId: z.string().uuid("Invalid user ID"),
-  status: z
-    .enum([
-      "lead",
-      "new_application",
-      "missing_documents",
-      "ready_to_submit",
-      "submitted",
-      "approved",
-      "offer_accepted",
-      "contracts_out",
-      "funded",
-      "dead",
-    ])
-    .default("lead"),
+  status: z.enum(DEAL_STATUS_VALUES).default("lead"),
   notes: z.string().optional(),
 });
 
@@ -79,6 +67,24 @@ export async function createDeal(
 ) {
   const validated = createDealSchema.parse(input);
 
+  // Validate that the assigned user belongs to the same workspace
+  const [assignedUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.id, validated.assignedUserId),
+        eq(users.workspaceId, ctx.workspaceId),
+      ),
+    )
+    .limit(1);
+
+  if (!assignedUser) {
+    throw new Error(
+      `Cannot assign deal: user '${validated.assignedUserId}' does not belong to this workspace.`,
+    );
+  }
+
   return db.transaction(async (tx) => {
     const [deal] = await tx
       .insert(deals)
@@ -94,7 +100,7 @@ export async function createDeal(
       })
       .returning();
 
-    await logEvent(tx as unknown as Database, {
+    await logEvent(tx, {
       workspaceId: ctx.workspaceId,
       dealId: deal.id,
       actorId: ctx.userId,
@@ -204,7 +210,7 @@ export async function updateDeal(
       .where(eq(deals.id, dealId))
       .returning();
 
-    await logEvent(tx as unknown as Database, {
+    await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
       dealId,
       actorId: scope.ctx.userId,
@@ -244,7 +250,7 @@ export async function updateDealStatus(
       .where(eq(deals.id, dealId))
       .returning();
 
-    await logEvent(tx as unknown as Database, {
+    await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
       dealId,
       actorId: scope.ctx.userId,
@@ -274,14 +280,21 @@ export async function assignDeal(
   // Verify the deal exists and is visible
   const existing = await scope.findDeal(dealId);
 
-  // Fetch the new user's name for the activity log
+  // Fetch the new user — and verify they belong to the same workspace
   const [newUser] = await db
-    .select({ name: users.name })
+    .select({ name: users.name, workspaceId: users.workspaceId })
     .from(users)
-    .where(eq(users.id, newUserId));
+    .where(
+      and(
+        eq(users.id, newUserId),
+        eq(users.workspaceId, scope.ctx.workspaceId),
+      ),
+    );
 
   if (!newUser) {
-    throw new Error(`User not found: ${newUserId}`);
+    throw new Error(
+      `Cannot assign deal: user '${newUserId}' not found in this workspace.`,
+    );
   }
 
   // Fetch the old user's name (if there is one)
@@ -301,7 +314,7 @@ export async function assignDeal(
       .where(eq(deals.id, dealId))
       .returning();
 
-    await logEvent(tx as unknown as Database, {
+    await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
       dealId,
       actorId: scope.ctx.userId,
@@ -338,7 +351,7 @@ export async function softDeleteDeal(
       .where(eq(deals.id, dealId))
       .returning();
 
-    await logEvent(tx as unknown as Database, {
+    await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
       dealId,
       actorId: scope.ctx.userId,

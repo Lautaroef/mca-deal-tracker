@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import {
   users,
   workspaces,
   deals,
-  eventLog,
   teamMemberships,
 } from "@/server/db/schema";
 import {
@@ -20,6 +19,7 @@ import {
   listDeals,
 } from "@/server/services/deals";
 import { getDealEvents } from "@/server/services/activity-log";
+import type { DealStatus } from "@/server/lib/status-machine";
 
 // ─── Test context ───────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ function buildAdminScope() {
 // ─── Helper: create a fresh test deal ───────────────────────────────────────
 
 async function createTestDeal(overrides?: {
-  status?: string;
+  status?: DealStatus;
   assignedUserId?: string;
 }) {
   const ctx = buildAdminCtx();
@@ -85,7 +85,7 @@ async function createTestDeal(overrides?: {
     merchantEmail: "test@example.com",
     requestedAmount: "50000.00",
     assignedUserId: overrides?.assignedUserId ?? repEmily.id,
-    status: (overrides?.status as "lead") ?? "lead",
+    status: overrides?.status ?? "lead",
   });
   return deal;
 }

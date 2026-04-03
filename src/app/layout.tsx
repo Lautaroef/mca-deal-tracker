@@ -4,6 +4,8 @@ import "./globals.css";
 import { TRPCProvider } from "@/lib/trpc";
 import { Toaster } from "sonner";
 import { DevToolbar } from "@/components/dev-toolbar";
+import { AppHeader } from "@/components/app-header";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,9 +34,12 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <TRPCProvider>
-          {children}
-          <Toaster />
-          <DevToolbar />
+          <TooltipProvider>
+            <AppHeader />
+            <div className="pt-14">{children}</div>
+            <Toaster />
+            <DevToolbar />
+          </TooltipProvider>
         </TRPCProvider>
       </body>
     </html>

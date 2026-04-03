@@ -1,16 +1,19 @@
 // ─── Deal Status Types ───────────────────────────────────────────────────────
 
-export type DealStatus =
-  | "lead"
-  | "new_application"
-  | "missing_documents"
-  | "ready_to_submit"
-  | "submitted"
-  | "approved"
-  | "offer_accepted"
-  | "contracts_out"
-  | "funded"
-  | "dead";
+export const DEAL_STATUS_VALUES = [
+  "lead",
+  "new_application",
+  "missing_documents",
+  "ready_to_submit",
+  "submitted",
+  "approved",
+  "offer_accepted",
+  "contracts_out",
+  "funded",
+  "dead",
+] as const;
+
+export type DealStatus = (typeof DEAL_STATUS_VALUES)[number];
 
 export type StatusSegment =
   | "Intake"

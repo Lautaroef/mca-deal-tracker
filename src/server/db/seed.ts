@@ -9,6 +9,7 @@ import {
   deals,
   eventLog,
 } from "./schema";
+import type { DealStatus } from "@/server/lib/status-machine";
 
 const connectionString = process.env.DATABASE_URL_MIGRATION;
 if (!connectionString) {
@@ -17,17 +18,6 @@ if (!connectionString) {
 
 const client = postgres(connectionString, { max: 1 });
 const db = drizzle(client);
-
-type DealStatus =
-  | "lead"
-  | "new_application"
-  | "missing_documents"
-  | "ready_to_submit"
-  | "submitted"
-  | "approved"
-  | "offer_accepted"
-  | "funded"
-  | "dead";
 
 interface DealSeed {
   merchantName: string;

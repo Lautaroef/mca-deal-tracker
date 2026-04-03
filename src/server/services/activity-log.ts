@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and, desc, gte, lt } from "drizzle-orm";
-import { eventLog } from "@/server/db/schema";
-import type { Database } from "@/server/db";
+import { eventLog, users } from "@/server/db/schema";
+import type { Database, DatabaseOrTransaction } from "@/server/db";
 
 // ─── Event Metadata Schemas ─────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ interface LogEventParams<T extends EventType> {
  * Designed to be called within a transaction alongside the mutation it logs.
  */
 export async function logEvent<T extends EventType>(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: LogEventParams<T>,
 ): Promise<void> {
   const { workspaceId, dealId, actorId, eventType, metadata } = params;
@@ -105,8 +105,18 @@ export async function getDealEvents(
   workspaceId: string,
 ) {
   return db
-    .select()
+    .select({
+      id: eventLog.id,
+      workspaceId: eventLog.workspaceId,
+      dealId: eventLog.dealId,
+      actorId: eventLog.actorId,
+      actorName: users.name,
+      eventType: eventLog.eventType,
+      metadata: eventLog.metadata,
+      createdAt: eventLog.createdAt,
+    })
     .from(eventLog)
+    .innerJoin(users, eq(eventLog.actorId, users.id))
     .where(
       and(eq(eventLog.dealId, dealId), eq(eventLog.workspaceId, workspaceId)),
     )
