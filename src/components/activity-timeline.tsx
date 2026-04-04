@@ -57,8 +57,11 @@ function eventDescription(event: EventEntry): string {
   const actor = event.actorName ?? "Someone";
 
   switch (event.eventType) {
-    case "deal_created":
-      return `${actor} created this deal`;
+    case "deal_created": {
+      const assignee = meta.assigned_user_name ?? null;
+      const suffix = assignee ? ` (assigned to ${assignee})` : "";
+      return `${actor} created this deal${suffix}`;
+    }
     case "status_changed":
       return `${actor} changed status from ${meta.old_status_label ?? meta.old_status} to ${meta.new_status_label ?? meta.new_status}`;
     case "deal_assigned": {
@@ -66,8 +69,11 @@ function eventDescription(event: EventEntry): string {
       const to = meta.new_user_name ?? "unknown";
       return `${actor} reassigned from ${from} to ${to}`;
     }
-    case "deal_deleted":
-      return `${actor} archived this deal`;
+    case "deal_deleted": {
+      const statusLabel = meta.status_at_deletion_label ?? meta.status_at_deletion ?? null;
+      const suffix = statusLabel ? ` (was ${statusLabel})` : "";
+      return `${actor} archived this deal${suffix}`;
+    }
     case "deal_updated": {
       const changes = meta.changes as
         | Array<{ field: string; old_value: string | null; new_value: string | null }>

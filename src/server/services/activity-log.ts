@@ -8,7 +8,9 @@ import type { Database, DatabaseOrTransaction } from "@/server/db";
 export const dealCreatedMetadataSchema = z.object({
   merchant_name: z.string(),
   status: z.string(),
+  status_label: z.string(),
   assigned_user_id: z.string().uuid(),
+  assigned_user_name: z.string(),
   requested_amount: z.string(),
 });
 
@@ -29,6 +31,7 @@ export const dealAssignedMetadataSchema = z.object({
 export const dealDeletedMetadataSchema = z.object({
   merchant_name: z.string(),
   status_at_deletion: z.string(),
+  status_at_deletion_label: z.string(),
 });
 
 export const dealUpdatedMetadataSchema = z.object({
@@ -151,6 +154,46 @@ export async function getUserEvents(
   return db
     .select()
     .from(eventLog)
+    .where(and(...conditions))
+    .orderBy(desc(eventLog.createdAt));
+}
+
+/**
+ * Fetch all events of a given type within a workspace, optionally filtered to a time window.
+ * Useful for queries like "all status changes in the last 24 hours" or
+ * "all deal_assigned events this week".
+ */
+export async function getEventsByType(
+  db: Database,
+  workspaceId: string,
+  eventType: EventType,
+  options?: { since?: Date; until?: Date },
+) {
+  const conditions = [
+    eq(eventLog.workspaceId, workspaceId),
+    eq(eventLog.eventType, eventType),
+  ];
+
+  if (options?.since) {
+    conditions.push(gte(eventLog.createdAt, options.since));
+  }
+  if (options?.until) {
+    conditions.push(lt(eventLog.createdAt, options.until));
+  }
+
+  return db
+    .select({
+      id: eventLog.id,
+      workspaceId: eventLog.workspaceId,
+      dealId: eventLog.dealId,
+      actorId: eventLog.actorId,
+      actorName: users.name,
+      eventType: eventLog.eventType,
+      metadata: eventLog.metadata,
+      createdAt: eventLog.createdAt,
+    })
+    .from(eventLog)
+    .innerJoin(users, eq(eventLog.actorId, users.id))
     .where(and(...conditions))
     .orderBy(desc(eventLog.createdAt));
 }

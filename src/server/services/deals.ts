@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { deals, users } from "@/server/db/schema";
 import type { Database } from "@/server/db";
 import type { WorkspaceContext, WorkspaceScope } from "@/server/lib/workspace-scope";
@@ -69,7 +69,7 @@ export async function createDeal(
 
   // Validate that the assigned user belongs to the same workspace
   const [assignedUser] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, name: users.name })
     .from(users)
     .where(
       and(
@@ -108,7 +108,9 @@ export async function createDeal(
       metadata: {
         merchant_name: deal.merchantName,
         status: deal.status,
+        status_label: getStatusLabel(deal.status as DealStatus),
         assigned_user_id: deal.assignedUserId,
+        assigned_user_name: assignedUser.name,
         requested_amount: deal.requestedAmount,
       },
     });
@@ -207,8 +209,17 @@ export async function updateDeal(
     const [updated] = await tx
       .update(deals)
       .set(updatePayload)
-      .where(eq(deals.id, dealId))
+      .where(
+        and(
+          eq(deals.id, dealId),
+          eq(deals.workspaceId, scope.ctx.workspaceId),
+        ),
+      )
       .returning();
+
+    if (!updated) {
+      throw new Error(`Deal not found: ${dealId}`);
+    }
 
     await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
@@ -225,6 +236,10 @@ export async function updateDeal(
 /**
  * Transition a deal to a new status. Validates the transition against the
  * state machine, then mutates atomically with a `status_changed` event.
+ *
+ * The status is re-read inside the transaction with SELECT FOR UPDATE to
+ * prevent TOCTOU race conditions where two concurrent requests both read
+ * the same old status and attempt incompatible transitions.
  */
 export async function updateDealStatus(
   db: Database,
@@ -232,23 +247,50 @@ export async function updateDealStatus(
   dealId: string,
   newStatus: DealStatus,
 ) {
-  // Verify the deal exists and is visible
-  const existing = await scope.findDeal(dealId);
-
-  const oldStatus = existing.status as DealStatus;
-
-  // Validate the transition
-  const result = validateTransition(oldStatus, newStatus);
-  if (!result.valid) {
-    throw new Error(result.error);
-  }
+  // Authorization check: verify the deal exists, is visible, and is not soft-deleted
+  await scope.findDeal(dealId);
 
   return db.transaction(async (tx) => {
+    // Re-read the deal inside the transaction with a row lock to get the
+    // authoritative current status. This prevents race conditions.
+    const [current] = await tx
+      .select()
+      .from(deals)
+      .where(
+        and(
+          eq(deals.id, dealId),
+          eq(deals.workspaceId, scope.ctx.workspaceId),
+          isNull(deals.deletedAt),
+        ),
+      )
+      .for("update");
+
+    if (!current) {
+      throw new Error(`Deal not found: ${dealId}`);
+    }
+
+    const oldStatus = current.status as DealStatus;
+
+    // Validate the transition against the authoritative current status
+    const result = validateTransition(oldStatus, newStatus);
+    if (!result.valid) {
+      throw new Error(result.error);
+    }
+
     const [updated] = await tx
       .update(deals)
       .set({ status: newStatus })
-      .where(eq(deals.id, dealId))
+      .where(
+        and(
+          eq(deals.id, dealId),
+          eq(deals.workspaceId, scope.ctx.workspaceId),
+        ),
+      )
       .returning();
+
+    if (!updated) {
+      throw new Error(`Deal not found: ${dealId}`);
+    }
 
     await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
@@ -311,8 +353,17 @@ export async function assignDeal(
     const [updated] = await tx
       .update(deals)
       .set({ assignedUserId: newUserId })
-      .where(eq(deals.id, dealId))
+      .where(
+        and(
+          eq(deals.id, dealId),
+          eq(deals.workspaceId, scope.ctx.workspaceId),
+        ),
+      )
       .returning();
+
+    if (!updated) {
+      throw new Error(`Deal not found: ${dealId}`);
+    }
 
     await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
@@ -348,8 +399,17 @@ export async function softDeleteDeal(
     const [deleted] = await tx
       .update(deals)
       .set({ deletedAt: new Date() })
-      .where(eq(deals.id, dealId))
+      .where(
+        and(
+          eq(deals.id, dealId),
+          eq(deals.workspaceId, scope.ctx.workspaceId),
+        ),
+      )
       .returning();
+
+    if (!deleted) {
+      throw new Error(`Deal not found: ${dealId}`);
+    }
 
     await logEvent(tx, {
       workspaceId: scope.ctx.workspaceId,
@@ -359,6 +419,7 @@ export async function softDeleteDeal(
       metadata: {
         merchant_name: existing.merchantName,
         status_at_deletion: existing.status,
+        status_at_deletion_label: getStatusLabel(existing.status as DealStatus),
       },
     });
 
