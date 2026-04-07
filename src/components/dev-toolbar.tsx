@@ -129,7 +129,7 @@ export function DevToolbar() {
                 <SelectTrigger className="w-[260px]">
                   <SelectValue placeholder="Switch user..." />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent side="top" align="end">
                   {workspaces.map((ws) => (
                     <SelectGroup key={ws.workspaceId}>
                       <SelectLabel>{ws.workspaceName}</SelectLabel>
