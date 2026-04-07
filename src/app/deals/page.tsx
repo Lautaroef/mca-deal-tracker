@@ -60,10 +60,14 @@ export default function DealsPage() {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const { data: deals, isLoading } = useQuery({
+  const { data: deals, isLoading, error } = useQuery({
     queryKey: ["deals", "list"],
     queryFn: () => trpc.deals.list.query(),
+    retry: false,
   });
+
+  const isUnauthorized =
+    error instanceof Error && /logged in|UNAUTHORIZED/i.test(error.message);
 
   const { data: workspaceUsers } = useQuery({
     queryKey: ["deals", "listUsers"],
@@ -231,6 +235,8 @@ export default function DealsPage() {
           <TabsContent key={tab.value} value={tab.value}>
             {isLoading ? (
               <DealTableSkeleton />
+            ) : isUnauthorized ? (
+              <NotLoggedInState />
             ) : filteredDeals.length === 0 ? (
               <EmptyState
                 hasDeals={!!deals?.length}
@@ -360,6 +366,21 @@ function DealTableSkeleton() {
           <Skeleton className="h-4 w-[80px]" />
         </div>
       ))}
+    </div>
+  );
+}
+
+function NotLoggedInState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="flex size-16 items-center justify-center rounded-full bg-muted mb-4">
+        <InboxIcon className="size-8 text-muted-foreground" />
+      </div>
+      <h3 className="text-lg font-medium">Select a user to get started</h3>
+      <p className="mt-1 text-sm text-muted-foreground max-w-sm">
+        Use the dev toolbar at the bottom of the screen to pick a user and
+        explore the deal pipeline.
+      </p>
     </div>
   );
 }
